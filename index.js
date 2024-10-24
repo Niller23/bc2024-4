@@ -2,6 +2,14 @@ const http = require('http');
 const { Command } = require('commander');
 const fs = require('fs').promises;
 const path = require('path');
+const superagent = require('superagent');
+// const express = require('express');
+// const app=express();
+
+// app.get('/', (req,res) => {
+//   res.send('<h1>My first ever site</h1>');
+// });
+
 
 const program = new Command();
 program
@@ -25,47 +33,79 @@ async function checkCacheDirectory() {
   }
 }
 
-// Функція для читання файлу з кешу
-async function readFromCache(filePath) {
-  try {
-    const data = await fs.readFile(filePath, 'utf8');
-    return data;
-  } catch (error) {
-    console.error(`Помилка читання файлу: ${error}`);
-    return null;
-  }
-}
-
-// Функція для запису файлу в кеш
-async function writeToCache(filePath, data) {
-  try {
-    await fs.writeFile(filePath, data, 'utf8');
-    console.log(`Файл збережено в кеш: ${filePath}`);
-  } catch (error) {
-    console.error(`Помилка запису файлу: ${error}`);
-  }
-}
-
+// Обробник запитів
 const requestListener = async function (req, res) {
-    const urlPath = req.url.slice(1); // Видаляємо перший слеш '/'
-    const code = parseInt(urlPath, 10); // Перетворюємо шлях на число
-  
-    if (isNaN(code)) {
-      res.writeHead(400, { 'Content-Type': 'text/plain' });
-      res.end('Неправильний HTTP код');
-      return;
-    }
-  
-    const htmlFilePath = path.join(__dirname, 'index.html'); // Шлях до HTML-файлу
+  // res.end("My server with images")
+  const urlPath = req.url.slice(1); // Видаляємо перший слеш '/'
+  const code = parseInt(urlPath, 10); // Перетворюємо шлях на число
+  const filePath = path.join(cacheDir, `${code}.jpg`); // Формуємо шлях до файлу
+
+  if (isNaN(code)) {
+    res.writeHead(400, { 'Content-Type': 'text/plain' });
+    res.end('Wrong HTTP code');
+    return;
+  }
+
+  if (req.method === 'GET') {
     try {
-      const htmlContent = await fs.readFile(htmlFilePath, 'utf8');
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(htmlContent);
+      // Спробуємо прочитати картинку з кешу
+      const image = await fs.readFile(filePath);
+      res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+      res.end(image);
+    } catch (error) {
+      if (error.code === 'ENOENT') { // Якщо файл не знайдено
+        try {
+          // Скачати картинку з http.cat
+          const response = await superagent.get(`https://http.cat/${code}`).responseType('buffer');
+          const imageBuffer = response.body;
+
+          // Записати в кеш
+          await fs.writeFile(filePath, imageBuffer);
+          res.writeHead(200, { 'Content-Type': 'image/jpeg' });
+          res.end(imageBuffer);
+        } catch (fetchError) {
+          res.writeHead(404, { 'Content-Type': 'text/plain' });
+          res.end('Not Found');
+        }
+      } else {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal Server Error');
+      }
+    }
+  } else if (req.method === 'PUT') {
+    try {
+      const data = [];
+      req.on('data', chunk => data.push(chunk));
+      req.on('end', async () => {
+        const imageBuffer = Buffer.concat(data);
+        await fs.writeFile(filePath, imageBuffer);
+        res.writeHead(201, { 'Content-Type': 'text/plain' });
+        res.end('Created');
+      });
     } catch (error) {
       res.writeHead(500, { 'Content-Type': 'text/plain' });
-      res.end('Помилка сервера');
+      res.end('Internal Server Error');
     }
-  };
+  } else if (req.method === 'DELETE') {
+    try {
+      await fs.unlink(filePath);
+      res.writeHead(200, { 'Content-Type': 'text/plain' });
+      res.end('Deleted');
+    } catch (error) {
+      if (error.code === 'ENOENT') {
+        res.writeHead(404, { 'Content-Type': 'text/plain' });
+        res.end('Not Found');
+      } else {
+        res.writeHead(500, { 'Content-Type': 'text/plain' });
+        res.end('Internal Server Error');
+      }
+    }
+  } else {
+    res.writeHead(405, { 'Content-Type': 'text/plain' });
+    res.end('Method Not Allowed');
+  }
+};
+
 // Спершу перевіряємо наявність директорії для кешу, а потім запускаємо сервер
 checkCacheDirectory().then(() => {
   const server = http.createServer(requestListener);
