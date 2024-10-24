@@ -3,13 +3,6 @@ const { Command } = require('commander');
 const fs = require('fs').promises;
 const path = require('path');
 const superagent = require('superagent');
-// const express = require('express');
-// const app=express();
-
-// app.get('/', (req,res) => {
-//   res.send('<h1>My first ever site</h1>');
-// });
-
 
 const program = new Command();
 program
@@ -42,7 +35,7 @@ const requestListener = async function (req, res) {
 
   if (isNaN(code)) {
     res.writeHead(400, { 'Content-Type': 'text/plain' });
-    res.end('Wrong HTTP code');
+    res.end('Welcome to server');
     return;
   }
 
@@ -117,3 +110,4 @@ checkCacheDirectory().then(() => {
     console.log(`Cache: ${cacheDir}`);
   });
 });
+
